@@ -5,8 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "npx playwright test --reporter=html",
-    "test:ui": "npx playwright test --ui --reporter=html",
-    "format": "npx prettier --write **/*.ts"
+    "format": "npx prettier --write 'api/**/*.ts' 'utils/**/*.ts' '*.ts'"
   },
   "author": "",
   "license": "ISC",
