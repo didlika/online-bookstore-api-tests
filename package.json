@@ -1,0 +1,24 @@
+{
+  "name": "online-bookstore",
+  "version": "1.0.0",
+  "description": "API automation tests for Bookstore REST API (FakeRestAPI)",
+  "main": "index.js",
+  "scripts": {
+    "test": "npx playwright test --reporter=html",
+    "test:ui": "npx playwright test --ui --reporter=html",
+    "format": "npx prettier --write **/*.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^24.7.2",
+    "prettier": "^3.6.2",
+    "pretty-quick": "^4.2.2",
+    "simple-git-hooks": "^2.13.1",
+    "typescript": "^5.9.3"
+  },
+  "lint-staged": {
+    "*.{js,css,md}": "prettier --write"
+  }
+}
