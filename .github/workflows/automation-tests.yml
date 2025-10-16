@@ -2,7 +2,7 @@ name: API Tests CI/CD
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ '*' ]
   pull_request:
     branches: [ main, develop ]
   workflow_dispatch:
@@ -44,13 +44,9 @@ jobs:
           retention-days: 1
 
   test:
-    name: Run Tests
+    name: Run All Tests
     runs-on: ubuntu-latest
     needs: build
-    strategy:
-      fail-fast: false
-      matrix:
-        suite: [books, authors]
     steps:
       - uses: actions/checkout@v4
 
@@ -61,56 +57,36 @@ jobs:
       - name: Load Docker image
         run: docker load < docker-image.tar.gz
 
-      - name: Run ${{ matrix.suite }} tests
+      - name: Run tests
+        continue-on-error: true
+        id: run-tests
         run: |
           docker run \
             -e CI=true \
             -e BASE_URL=${{ github.event.inputs.base_url || env.BASE_URL }} \
             -e WORKERS=2 \
-            -v ${{ github.workspace }}/playwright-report-${{ matrix.suite }}:/app/playwright-report \
-            ${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }} \
-            npx playwright test api-tests/${{ matrix.suite }}/ --reporter=html,list
+            -v ${{ github.workspace }}/playwright-report:/app/playwright-report \
+            ${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Check test results
+        run: |
+          if [ "${{ steps.run-tests.outcome }}" == "failure" ]; then
+            echo "⚠️ Tests failed but report was generated" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: playwright-report-${{ matrix.suite }}
-          path: playwright-report-${{ matrix.suite }}/
+          name: playwright-report
+          path: playwright-report/
           retention-days: 30
 
-  report:
-    name: Test Summary
+  publish-report:
+    name: Publish Report
     runs-on: ubuntu-latest
     needs: test
     if: always()
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: playwright-report-*
-          path: all-reports
-
-      - name: Generate summary
-        run: |
-          echo "# 🎭 Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Test Suites" >> $GITHUB_STEP_SUMMARY
-          
-          for dir in all-reports/playwright-report-*; do
-            if [ -d "$dir" ]; then
-              suite=$(basename "$dir" | sed 's/playwright-report-//')
-              size=$(du -sh "$dir" 2>/dev/null | cut -f1)
-              echo "- ✅ **${suite}** (${size})" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-
-  publish-report:
-    name: Publish Reports
-    runs-on: ubuntu-latest
-    needs: test
-    if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
     permissions:
       contents: write
       pull-requests: write
@@ -118,47 +94,24 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
+        id: download-artifact
+        continue-on-error: true
         with:
-          pattern: playwright-report-*
-          path: reports
+          name: playwright-report
+          path: playwright-report
 
-      - name: Prepare reports
+      - name: Check if report exists
+        id: check-report
         run: |
-          mkdir -p gh-pages
-          cat > gh-pages/index.html << 'EOF'
-          <!DOCTYPE html>
-          <html><head><title>Test Reports</title>
-          <style>
-            body{font-family:Arial;max-width:1200px;margin:50px auto;padding:20px}
-            h1{color:#333}.info{background:#f5f5f5;padding:15px;border-radius:5px;margin:20px 0}
-            ul{list-style:none;padding:0}li{margin:10px 0}
-            a{color:#0066cc;text-decoration:none;font-size:18px}a:hover{text-decoration:underline}
-          </style></head><body>
-          <h1>🎭 Test Reports</h1>
-          <div class='info'>
-          EOF
-          
-          echo "<p><strong>Build:</strong> ${{ github.run_number }}</p>" >> gh-pages/index.html
-          echo "<p><strong>Branch:</strong> ${{ github.ref_name }}</p>" >> gh-pages/index.html
-          
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            echo "<p><strong>PR:</strong> #${{ github.event.pull_request.number }}</p>" >> gh-pages/index.html
+          if [ -d "playwright-report" ] && [ -f "playwright-report/index.html" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No Playwright report found to publish" >> $GITHUB_STEP_SUMMARY
           fi
-          
-          echo "</div><h2>Test Suites</h2><ul>" >> gh-pages/index.html
-          
-          for dir in reports/playwright-report-*; do
-            if [ -d "$dir" ]; then
-              suite=$(basename "$dir" | sed 's/playwright-report-//')
-              mkdir -p "gh-pages/${suite}"
-              cp -r "$dir"/* "gh-pages/${suite}/"
-              echo "<li>📄 <a href='${suite}/index.html'>${suite^} Tests</a></li>" >> gh-pages/index.html
-            fi
-          done
-          
-          echo "</ul></body></html>" >> gh-pages/index.html
 
       - name: Set destination
+        if: steps.check-report.outputs.exists == 'true'
         id: dest
         run: |
           if [ "${{ github.event_name }}" == "pull_request" ]; then
@@ -168,27 +121,33 @@ jobs:
           fi
 
       - uses: peaceiris/actions-gh-pages@v3
+        if: steps.check-report.outputs.exists == 'true'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./gh-pages
+          publish_dir: ./playwright-report
           destination_dir: ${{ steps.dest.outputs.path }}
           keep_files: true
 
+      - name: Add report link to job summary
+        if: steps.check-report.outputs.exists == 'true'
+        run: |
+          REPORT_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/${{ steps.dest.outputs.path }}/index.html"
+          echo "## 🎭 Playwright Test Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📊 **[View Full Report]($REPORT_URL)**" >> $GITHUB_STEP_SUMMARY
+
       - name: Comment on PR
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.check-report.outputs.exists == 'true'
         uses: actions/github-script@v7
         with:
           script: |
             const url = `https://${context.repo.owner}.github.io/${context.repo.repo}/${{ steps.dest.outputs.path }}/`;
             
-            const comment = `## 🎭 Test Reports
+            const comment = `## 🎭 Test Report
             
-            📊 **[View Reports](${url})**
+            📊 **[View Playwright Report](${url}index.html)**
             
-            - [Books Tests](${url}books/)
-            - [Authors Tests](${url}authors/)
-            
-            📥 [Download Artifacts](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${{ github.run_id }})`;
+            📥 [Download Artifact](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${{ github.run_id }})`;
             
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -196,7 +155,7 @@ jobs:
               issue_number: ${{ github.event.pull_request.number }}
             });
             
-            const existing = comments.find(c => c.user.type === 'Bot' && c.body.includes('Test Reports'));
+            const existing = comments.find(c => c.user.type === 'Bot' && c.body.includes('Test Report'));
             
             if (existing) {
               await github.rest.issues.updateComment({
