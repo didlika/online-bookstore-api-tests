@@ -1,4 +1,4 @@
-name: API Automation Tests CI/CD
+name: API Tests CI/CD
 
 on:
   push:
@@ -11,14 +11,6 @@ on:
         description: 'API Base URL'
         required: false
         default: 'https://fakerestapi.azurewebsites.net/api/v1'
-      test_suite:
-        description: 'Test suite to run (all, books, authors, get, post, put, delete)'
-        required: false
-        default: 'all'
-      reporter:
-        description: 'Reporter type (html, list, json, junit)'
-        required: false
-        default: 'html'
 
 env:
   DOCKER_IMAGE_NAME: playwright-api-tests
@@ -28,13 +20,9 @@ jobs:
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
         uses: docker/build-push-action@v5
@@ -47,246 +35,181 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Save Docker image
-        run: |
-          docker save ${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }} | gzip > docker-image.tar.gz
+        run: docker save ${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }} | gzip > docker-image.tar.gz
 
-      - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: docker-image
           path: docker-image.tar.gz
           retention-days: 1
 
   test:
-    name: Run API Tests
+    name: Run Tests
     runs-on: ubuntu-latest
     needs: build
     strategy:
       fail-fast: false
       matrix:
         suite: [books, authors]
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Download Docker image
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: docker-image
 
       - name: Load Docker image
-        run: |
-          docker load < docker-image.tar.gz
-
-      - name: Determine test pattern
-        id: test-pattern
-        run: |
-          if [ "${{ github.event.inputs.test_suite }}" == "all" ] || [ "${{ github.event.inputs.test_suite }}" == "" ]; then
-            echo "pattern=${{ matrix.suite }}-" >> $GITHUB_OUTPUT
-          else
-            echo "pattern=${{ github.event.inputs.test_suite }}" >> $GITHUB_OUTPUT
-          fi
+        run: docker load < docker-image.tar.gz
 
       - name: Run ${{ matrix.suite }} tests
         run: |
           docker run \
             -e CI=true \
             -e BASE_URL=${{ github.event.inputs.base_url || env.BASE_URL }} \
-            -e REPORTER=${{ github.event.inputs.reporter || 'list' }} \
             -e WORKERS=2 \
             -v ${{ github.workspace }}/playwright-report-${{ matrix.suite }}:/app/playwright-report \
-            -v ${{ github.workspace }}/test-results-${{ matrix.suite }}:/app/test-results \
             ${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }} \
-            npx playwright test ${{ matrix.suite }}- --reporter=html,list
-        continue-on-error: false
+            npx playwright test api-tests/${{ matrix.suite }}/ --reporter=html,list
 
-      - name: Upload test results
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-${{ matrix.suite }}
-          path: test-results-${{ matrix.suite }}/
-          retention-days: 30
-
-      - name: Upload HTML report
-        if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ matrix.suite }}
           path: playwright-report-${{ matrix.suite }}/
           retention-days: 30
 
-  test-combined:
-    name: Run All Tests Combined
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.test_suite == 'all'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download Docker image
-        uses: actions/download-artifact@v4
-        with:
-          name: docker-image
-
-      - name: Load Docker image
-        run: |
-          docker load < docker-image.tar.gz
-
-      - name: Run all tests
-        run: |
-          docker run \
-            -e CI=true \
-            -e BASE_URL=${{ github.event.inputs.base_url || env.BASE_URL }} \
-            -e REPORTER=${{ github.event.inputs.reporter || 'html' }} \
-            -e WORKERS=2 \
-            -v ${{ github.workspace }}/playwright-report:/app/playwright-report \
-            -v ${{ github.workspace }}/test-results:/app/test-results \
-            ${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}
-
-      - name: Upload combined test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-combined
-          path: test-results/
-          retention-days: 30
-
-      - name: Upload combined HTML report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report-combined
-          path: playwright-report/
-          retention-days: 30
-
   report:
-    name: Generate Test Report Summary
+    name: Test Summary
     runs-on: ubuntu-latest
     needs: test
     if: always()
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download all test results
-        uses: actions/download-artifact@v4
-        with:
-          pattern: test-results-*
-          path: all-test-results
-
-      - name: Download all HTML reports
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           pattern: playwright-report-*
           path: all-reports
 
-      - name: Generate test summary
+      - name: Generate summary
         run: |
-          echo "# 🎭 Playwright API Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "# 🎭 Test Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Base URL:** ${{ github.event.inputs.base_url || env.BASE_URL }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 📊 Test Suites" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Test Suites" >> $GITHUB_STEP_SUMMARY
           
-          # Check for test result directories
-          if [ -d "all-test-results" ]; then
-            for dir in all-test-results/test-results-*; do
-              if [ -d "$dir" ]; then
-                suite_name=$(basename "$dir" | sed 's/test-results-//')
-                echo "- ✅ **${suite_name}** tests completed" >> $GITHUB_STEP_SUMMARY
-              fi
-            done
-          else
-            echo "⚠️ No test results found" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 📁 Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- HTML Reports: Available in workflow artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "- Test Results: Available in workflow artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "*View detailed reports in the **Actions** tab > **Artifacts** section*" >> $GITHUB_STEP_SUMMARY
+          for dir in all-reports/playwright-report-*; do
+            if [ -d "$dir" ]; then
+              suite=$(basename "$dir" | sed 's/playwright-report-//')
+              size=$(du -sh "$dir" 2>/dev/null | cut -f1)
+              echo "- ✅ **${suite}** (${size})" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
 
   publish-report:
-    name: Publish HTML Report to GitHub Pages
+    name: Publish Reports
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
     permissions:
       contents: write
-
+      pull-requests: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Download all HTML reports
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           pattern: playwright-report-*
           path: reports
 
-      - name: Prepare report directory
+      - name: Prepare reports
         run: |
           mkdir -p gh-pages
-          echo "<html><head><title>API Test Reports</title></head><body>" > gh-pages/index.html
-          echo "<h1>API Automation Test Reports</h1>" >> gh-pages/index.html
-          echo "<p>Build: ${{ github.sha }}</p>" >> gh-pages/index.html
-          echo "<p>Date: $(date)</p>" >> gh-pages/index.html
-          echo "<ul>" >> gh-pages/index.html
+          cat > gh-pages/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html><head><title>Test Reports</title>
+          <style>
+            body{font-family:Arial;max-width:1200px;margin:50px auto;padding:20px}
+            h1{color:#333}.info{background:#f5f5f5;padding:15px;border-radius:5px;margin:20px 0}
+            ul{list-style:none;padding:0}li{margin:10px 0}
+            a{color:#0066cc;text-decoration:none;font-size:18px}a:hover{text-decoration:underline}
+          </style></head><body>
+          <h1>🎭 Test Reports</h1>
+          <div class='info'>
+          EOF
+          
+          echo "<p><strong>Build:</strong> ${{ github.run_number }}</p>" >> gh-pages/index.html
+          echo "<p><strong>Branch:</strong> ${{ github.ref_name }}</p>" >> gh-pages/index.html
+          
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "<p><strong>PR:</strong> #${{ github.event.pull_request.number }}</p>" >> gh-pages/index.html
+          fi
+          
+          echo "</div><h2>Test Suites</h2><ul>" >> gh-pages/index.html
           
           for dir in reports/playwright-report-*; do
             if [ -d "$dir" ]; then
-              suite_name=$(basename "$dir" | sed 's/playwright-report-//')
-              mkdir -p "gh-pages/${suite_name}"
-              cp -r "$dir"/* "gh-pages/${suite_name}/"
-              echo "<li><a href='${suite_name}/index.html'>${suite_name} Tests</a></li>" >> gh-pages/index.html
+              suite=$(basename "$dir" | sed 's/playwright-report-//')
+              mkdir -p "gh-pages/${suite}"
+              cp -r "$dir"/* "gh-pages/${suite}/"
+              echo "<li>📄 <a href='${suite}/index.html'>${suite^} Tests</a></li>" >> gh-pages/index.html
             fi
           done
           
           echo "</ul></body></html>" >> gh-pages/index.html
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+      - name: Set destination
+        id: dest
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "path=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          else
+            echo "path=build-${{ github.run_number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./gh-pages
-          destination_dir: reports/${{ github.run_number }}
+          destination_dir: ${{ steps.dest.outputs.path }}
+          keep_files: true
 
-  notify:
-    name: Send Notifications
-    runs-on: ubuntu-latest
-    needs: [test, report]
-    if: always()
-
-    steps:
-      - name: Check test status
-        run: |
-          if [ "${{ needs.test.result }}" == "success" ]; then
-            echo "TEST_STATUS=✅ Success" >> $GITHUB_ENV
-            echo "TEST_COLOR=good" >> $GITHUB_ENV
-          else
-            echo "TEST_STATUS=❌ Failed" >> $GITHUB_ENV
-            echo "TEST_COLOR=danger" >> $GITHUB_ENV
-          fi
-
-      - name: Create status summary
-        run: |
-          echo "## Test Execution Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Status:** ${{ env.TEST_STATUS }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Build:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Author:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "[View Full Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = `https://${context.repo.owner}.github.io/${context.repo.repo}/${{ steps.dest.outputs.path }}/`;
+            
+            const comment = `## 🎭 Test Reports
+            
+            📊 **[View Reports](${url})**
+            
+            - [Books Tests](${url}books/)
+            - [Authors Tests](${url}authors/)
+            
+            📥 [Download Artifacts](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${{ github.run_id }})`;
+            
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ github.event.pull_request.number }}
+            });
+            
+            const existing = comments.find(c => c.user.type === 'Bot' && c.body.includes('Test Reports'));
+            
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: ${{ github.event.pull_request.number }},
+                body: comment
+              });
+            }

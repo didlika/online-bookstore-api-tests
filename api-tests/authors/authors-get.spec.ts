@@ -100,7 +100,7 @@ test.describe("Authors GET API", () => {
       expect(author).toMatchObject({
         id: authorId,
         idBook: expect.any(Number),
-        firstName: expect.any(String      ) ,
+        firstName: expect.any(String),
         lastName: expect.any(String),
       });
     });
