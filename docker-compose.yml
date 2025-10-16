@@ -1,0 +1,18 @@
+services:
+  playwright-tests:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      # Override these values as needed
+      - BASE_URL=https://fakerestapi.azurewebsites.net/api/v1
+      - TEST_DIR=./api-tests
+      - REPORTER=list
+      - WORKERS=2
+      - CI=false
+    volumes:
+      # Mount playwright-report to view HTML reports on host
+      - ./playwright-report:/app/playwright-report
+      - ./test-results:/app/test-results
+    # Uncomment to run specific tests or pass custom arguments
+    # command: npx playwright test api-tests/books/ --reporter=list

@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "npx playwright test --reporter=html",
-    "format": "npx prettier --write **/*.ts",
+    "format": "npx prettier --write  \"**/*.ts\"",
     "prepare": "husky"
   },
   "author": "",
@@ -19,6 +19,6 @@
     "typescript": "^5.9.3"
   },
   "lint-staged": {
-    "*.{js,css,md}": "prettier --write **/*.ts"
+    "*.{ts}": "prettier --write \"**/*.ts\""
   }
 }
