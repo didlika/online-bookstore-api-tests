@@ -95,24 +95,24 @@ test.describe("Books GET API", () => {
       expect(response.status()).toBe(404);
     });
 
-    test("Should return 404 or 400 for id 0", async () => {
+    test("Should return 404 for id 0", async () => {
       const response = await api.get("/Books/0");
-      expect([400, 404]).toContain(response.status());
+      expect([404]).toContain(response.status());
     });
 
-    test("Should return 404 or 400 for negative id", async () => {
+    test("Should return 404 for negative id", async () => {
       const response = await api.get("/Books/-1");
-      expect([400, 404]).toContain(response.status()); // why 400???
+      expect([404]).toContain(response.status()); // why 400???
     });
 
     test("Should return 404 or 400 for non-numeric id", async () => {
       const response = await api.get("/Books/abc");
-      expect([400, 404]).toContain(response.status());
+      expect([404, 400]).toContain(response.status());
     });
 
     test("Should return 404 or 400 for encoded malformed id", async () => {
       const response = await api.get("/Books/%20");
-      expect([400, 404]).toContain(response.status());
+      expect([404, 400]).toContain(response.status());
     });
 
     test("should return 404 for extra path segment", async () => {
