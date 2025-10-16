@@ -1,6 +1,14 @@
 import { expect, test } from "@playwright/test";
-import { ApiRequests } from "../utils/apiRequests";
-import { getRandomAuthorId, randomAuthor } from "../utils/dataGenerator";
+import { ApiRequests } from "../../utils/apiRequests";
+import { getRandomAuthorId, randomAuthor } from "../../utils/dataGenerator";
+import {
+  PATH_AUTHORS,
+  PATH_INVALID_AUTHORS,
+  STATUS_OK,
+  STATUS_NOT_FOUND,
+  NON_EXISTING_AUTHOR_ID,
+  ZERO_ID,
+} from "../../fixtures/testConstants";
 
 test.describe("Authors GET API", () => {
   let api: ApiRequests;
@@ -16,9 +24,9 @@ test.describe("Authors GET API", () => {
 
   test.describe("GET /api/v1/Authors", () => {
     test("should return all authors with 200 status", async () => {
-      const response = await api.get("/Authors");
+      const response = await api.get(PATH_AUTHORS);
 
-      expect(response.status()).toBe(200);
+      expect(response.status()).toBe(STATUS_OK);
 
       const authors = await response.json();
       expect(Array.isArray(authors)).toBe(true);
@@ -26,8 +34,8 @@ test.describe("Authors GET API", () => {
     });
 
     test("should return authors with valid schema structure", async () => {
-      const response = await api.get("/Authors");
-      expect(response.status()).toBe(200);
+      const response = await api.get(PATH_AUTHORS);
+      expect(response.status()).toBe(STATUS_OK);
 
       const authors = await response.json();
       expect(authors.length).toBeGreaterThan(0);
@@ -42,8 +50,8 @@ test.describe("Authors GET API", () => {
     });
 
     test("should return unique author IDs in collection", async () => {
-      const response = await api.get("/Authors");
-      expect(response.status()).toBe(200);
+      const response = await api.get(PATH_AUTHORS);
+      expect(response.status()).toBe(STATUS_OK);
 
       const authors = await response.json();
       const ids = authors.map((author: any) => author.id);
@@ -53,8 +61,8 @@ test.describe("Authors GET API", () => {
     });
 
     test("should have all authors with positive IDs", async () => {
-      const response = await api.get("/Authors");
-      expect(response.status()).toBe(200);
+      const response = await api.get(PATH_AUTHORS);
+      expect(response.status()).toBe(STATUS_OK);
 
       const authors = await response.json();
       authors.forEach((author: any) => {
@@ -64,8 +72,8 @@ test.describe("Authors GET API", () => {
     });
 
     test("should return authors sorted by ID", async () => {
-      const response = await api.get("/Authors");
-      expect(response.status()).toBe(200);
+      const response = await api.get(PATH_AUTHORS);
+      expect(response.status()).toBe(STATUS_OK);
 
       const authors = await response.json();
       const ids = authors.map((author: any) => author.id);
@@ -76,23 +84,23 @@ test.describe("Authors GET API", () => {
     });
 
     test("should return 404 for invalid collection path", async () => {
-      const response = await api.get("/Authorz");
-      expect(response.status()).toBe(404);
+      const response = await api.get(PATH_INVALID_AUTHORS);
+      expect(response.status()).toBe(STATUS_NOT_FOUND);
     });
   });
 
   test.describe("GET /api/v1/Authors/{id}", () => {
     test("should return author with correct schema for valid ID", async () => {
       const authorId = getRandomAuthorId();
-      const response = await api.get(`/Authors/${authorId}`);
+      const response = await api.get(`${PATH_AUTHORS}/${authorId}`);
 
-      expect(response.status()).toBe(200);
+      expect(response.status()).toBe(STATUS_OK);
 
       const author = await response.json();
       expect(author).toMatchObject({
         id: authorId,
         idBook: expect.any(Number),
-        firstName: expect.any(String),
+        firstName: expect.any(String      ) ,
         lastName: expect.any(String),
       });
     });
@@ -101,12 +109,12 @@ test.describe("Authors GET API", () => {
       const authorId = getRandomAuthorId();
 
       const [response1, response2] = await Promise.all([
-        api.get(`/Authors/${authorId}`),
-        api.get(`/Authors/${authorId}`),
+        api.get(`${PATH_AUTHORS}/${authorId}`),
+        api.get(`${PATH_AUTHORS}/${authorId}`),
       ]);
 
-      expect(response1.status()).toBe(200);
-      expect(response2.status()).toBe(200);
+      expect(response1.status()).toBe(STATUS_OK);
+      expect(response2.status()).toBe(STATUS_OK);
 
       const [author1, author2] = await Promise.all([
         response1.json(),
@@ -118,9 +126,9 @@ test.describe("Authors GET API", () => {
 
     test("should have valid firstName and lastName", async () => {
       const authorId = getRandomAuthorId();
-      const response = await api.get(`/Authors/${authorId}`);
+      const response = await api.get(`${PATH_AUTHORS}/${authorId}`);
 
-      expect(response.status()).toBe(200);
+      expect(response.status()).toBe(STATUS_OK);
 
       const author = await response.json();
       expect(author.firstName).toBeTruthy();
@@ -132,21 +140,23 @@ test.describe("Authors GET API", () => {
     test("should fetch random author successfully", async () => {
       const randomAuthorData = await randomAuthor(api);
 
-      const response = await api.get(`/Authors/${randomAuthorData.id}`);
-      expect(response.status()).toBe(200);
+      const response = await api.get(`${PATH_AUTHORS}/${randomAuthorData.id}`);
+      expect(response.status()).toBe(STATUS_OK);
 
       const author = await response.json();
       expect(author.id).toBe(randomAuthorData.id);
     });
 
     test("should return 404 for non-existing author", async () => {
-      const response = await api.get("/Authors/999999");
-      expect(response.status()).toBe(404);
+      const response = await api.get(
+        `${PATH_AUTHORS}/${NON_EXISTING_AUTHOR_ID}`,
+      );
+      expect(response.status()).toBe(STATUS_NOT_FOUND);
     });
 
     test("Should return 404 for id 0", async () => {
-      const response = await api.get("/Authors/0");
-      expect([404]).toContain(response.status());
+      const response = await api.get(`${PATH_AUTHORS}/${ZERO_ID}`);
+      expect([STATUS_NOT_FOUND]).toContain(response.status());
     });
 
     test("Should return 404 for negative id", async () => {

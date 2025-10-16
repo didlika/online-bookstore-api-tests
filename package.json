@@ -5,19 +5,20 @@
   "main": "index.js",
   "scripts": {
     "test": "npx playwright test --reporter=html",
-    "format": "npx prettier --write 'api/**/*.ts' 'utils/**/*.ts' '*.ts'"
+    "format": "npx prettier --write **/*.ts",
+    "prepare": "husky"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "@playwright/test": "^1.56.0",
     "@types/node": "^24.7.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.4",
     "prettier": "^3.6.2",
-    "pretty-quick": "^4.2.2",
-    "simple-git-hooks": "^2.13.1",
     "typescript": "^5.9.3"
   },
   "lint-staged": {
-    "*.{js,css,md}": "prettier --write"
+    "*.{js,css,md}": "prettier --write **/*.ts"
   }
 }
